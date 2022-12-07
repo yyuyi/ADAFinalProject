@@ -1,0 +1,291 @@
+---
+title: "ADA Final Project"
+author: "Yuyi Yang"
+date: "`r Sys.Date()`"
+output: html_document
+---
+
+```{r}
+# Load packages and open libraries
+pacman::p_load(dplyr, ggplot2, odds.n.ends, blorr, lmtest, car,  broom, tidyverse, jtools) 
+
+# odds.n.ends: computing sensitivity and specificity, plotting predictive probabilities and ROC curves for logistic regression
+# blorr: model fits of logistic regression
+# lmtest: likelihood ratio test
+# car: compare coefficients
+# broom: get cooks distance
+# tidyverse:data management and visualization
+```
+
+```{r}
+# read in the data
+BRFSS<-read_csv("BRFSS2021.csv") 
+```
+
+```{r}
+# code to columns, which is needed
+BRFSS1<-BRFSS %>% select(c('ACEDEPRS','ACEDRINK','ACEDRUGS','ACEPRISN','ACEDIVRC','ACEPUNCH','ACEHURT1','ACESWEAR','ACETOUCH','ACETTHEM','ACEHVSEX','@_RFBMI5','@_IMPRACE','SEXVAR'))
+head(BRFSS1)
+```
+
+```{r}
+# Rename variables
+BRFSS1 <- BRFSS1 %>%
+  rename('OBESE' = 12,'RACE'=13,'SEX'=14)
+table(BRFSS1$OBESE)
+table(BRFSS1$RACE)
+table(BRFSS1$SEX)
+```
+
+```{r}
+# reclassify OBESE into binary variable
+BRFSS1<-BRFSS1 %>% 
+  mutate(OBESE = case_when(OBESE==1 ~ 0,
+                             OBESE==2 ~ 1)) %>%
+  mutate(OBESE = factor(OBESE, levels = c(0, 1), labels = c("Not overweight or obese", "Overweight or obese")))
+table(BRFSS1$OBESE)
+
+# RECODE RACE
+BRFSS1<-BRFSS1 %>% 
+  mutate(RACE = case_when(RACE==1 ~ 0, RACE==2 ~ 1,RACE==3 ~ 2,
+                          RACE %in% c(4,5,6) ~ 3)) %>%
+  mutate(RACE = factor(RACE, levels = c(0, 1, 2, 3), labels = c("White", "Black","Asian","Others")))
+table(BRFSS1$RACE)
+
+# RECODE SEX
+BRFSS1<-BRFSS1 %>% 
+  mutate(SEX = case_when(SEX==1 ~ 0,
+                             SEX==2 ~ 1)) %>%
+  mutate(SEX = factor(SEX, levels = c(0, 1), labels = c("Male", "Female")))
+table(BRFSS1$SEX)
+```
+
+```{r}
+# RECODE ACES
+BRFSS1<-BRFSS1 %>% mutate(ACEDEPRS = case_when(ACEDEPRS==1 ~1, ACEDEPRS==2 ~ 0))
+BRFSS1<-BRFSS1 %>% mutate(ACEDRINK = case_when(ACEDRINK==1 ~1, ACEDRINK==2 ~ 0))
+BRFSS1<-BRFSS1 %>% mutate(ACEDRUGS = case_when(ACEDRUGS==1 ~1, ACEDRUGS==2 ~ 0))
+BRFSS1<-BRFSS1 %>% mutate(ACEPRISN = case_when(ACEPRISN==1 ~1, ACEPRISN==2 ~ 0))
+BRFSS1<-BRFSS1 %>% mutate(ACEDIVRC = case_when(ACEDIVRC %in% c(1,8) ~1, ACEDIVRC==2 ~ 0))
+BRFSS1<-BRFSS1 %>% mutate(ACEPUNCH = case_when(ACEPUNCH==1 ~0, ACEPUNCH %in% c(2,3) ~ 1))
+BRFSS1<-BRFSS1 %>% mutate(ACEHURT1 = case_when(ACEHURT1==1 ~0, ACEHURT1 %in% c(2,3) ~ 1))
+BRFSS1<-BRFSS1 %>% mutate(ACESWEAR = case_when(ACESWEAR==1 ~0, ACESWEAR %in% c(2,3) ~ 1))
+BRFSS1<-BRFSS1 %>% mutate(ACETOUCH = case_when(ACETOUCH==1 ~0, ACETOUCH %in% c(2,3) ~ 1))
+BRFSS1<-BRFSS1 %>% mutate(ACETTHEM = case_when(ACETTHEM==1 ~0, ACETTHEM %in% c(2,3) ~ 1))
+BRFSS1<-BRFSS1 %>% mutate(ACEHVSEX = case_when(ACEHVSEX==1 ~0, ACEHVSEX %in% c(2,3) ~ 1))
+table(BRFSS1$ACEDEPRS)
+table(BRFSS1$ACEDRINK)
+table(BRFSS1$ACEDRUGS)
+table(BRFSS1$ACEPRISN)
+table(BRFSS1$ACEDIVRC)
+table(BRFSS1$ACEPUNCH)
+table(BRFSS1$ACEHURT1)
+table(BRFSS1$ACESWEAR)
+table(BRFSS1$ACETOUCH)
+table(BRFSS1$ACETTHEM)
+table(BRFSS1$ACEHVSEX)
+```
+
+```{r}
+# Create a new variable that is the sum of 11 ACEs
+BRFSS1$ACES <- BRFSS1$ACEDEPRS + BRFSS1$ACEDRINK + BRFSS1$ACEDRUGS + BRFSS1$ACEPRISN + BRFSS1$ACEDIVRC + BRFSS1$ACEPUNCH + BRFSS1$ACEHURT1 + BRFSS1$ACESWEAR + BRFSS1$ACETOUCH + BRFSS1$ACETTHEM + BRFSS1$ACEHVSEX
+table(BRFSS1$ACES)
+```
+
+```{r}
+# code to columns, which is not needed
+BRFSS1<-BRFSS1 %>% select(-c(1:11)) 
+head(BRFSS1)
+```
+
+```{r}
+# DROP NA
+BRFSS2 <- BRFSS1 %>%
+  drop_na()
+
+# get a summary of dataset
+str(BRFSS2)
+summary(BRFSS2$OBESE)
+summary(BRFSS2$RACE)
+summary(BRFSS2$SEX)
+summary(BRFSS2$ACES)
+```
+
+```{r}
+# Check percentage of data excluded. This is too much missing data. Selection bias is needed to be considered.
+100 - nrow(BRFSS2)/nrow(BRFSS1) * 100
+```
+
+```{r}
+# Let's make sure we have enough cases in each exposure/outcome category, we are adding other potential variables we will use.
+table(BRFSS2$OBESE,BRFSS2$ACES, BRFSS2$RACE, BRFSS2$SEX)
+```
+
+```{r}
+# Make a box plot to visualize whether there is a difference in the ACES distributions by OBESE status.
+  ggplot(BRFSS2, aes(x = OBESE, y = ACES)) +
+      geom_boxplot(aes(fill = OBESE)) +
+      labs(x = "Obese Status", y = "ACE Score") +
+      theme_bw()
+```
+
+```{r}
+# Run a univariable (unadjusted) logistic model for ACES as a continuous variable.
+model1<- glm(OBESE ~ ACES, data=BRFSS2, family="binomial")
+summary(model1) # get log results
+
+exp(model1$coefficients)
+confint(model1)
+
+odds.n.ends(model1) # get OR results (and more!)
+# For every one SCORE increase in ACES, the odds of getting OBESE increases by 2.74% (95% CI 1.0097-1.0456).
+# The model sensitivity is almost 1 suggesting it as a good ability to predict the outcome at a predicted probability threshold of 0.5. The specificity is almost 0 indicating low specificity.
+```
+
+```{r}
+# Test the linearity assumption for ACES using the Box Tidwell test.  We need to create a term for the predictor*log(predictor) and then run a logistic regression with that term. Remember, a SIGNIFICANT (i.e. p < .05) coefficient means the assumption IS VIOLATED and we should consider using a categorized measure of ACES.
+BRFSS2 <- BRFSS2 %>%
+  mutate(ACES.times.logbmi = ACES * log(ACES)) # create term to test linearity
+
+model2 <- glm(OBESE ~ ACES + ACES.times.logbmi, data=BRFSS2, family="binomial") 
+
+summary(model2)
+# Since the p-value for ACES.times.logbmi >.05, we fail to reject the hypothesis that the linearity assumption is not met using the Box Tidwell test and ACES can be modelling as a linear term.
+```
+
+```{r}
+# After developing a DAG I find that my minimal set of covariates for adjustment of confounding are `RACE` and `SEX`. I decided to run a multivariate logistic regression model that includes `ACES` plus `RACE` and `SEX` in the model as covariates.
+model3 <- glm(OBESE ~  ACES +RACE+SEX, data=BRFSS2, family="binomial")
+summary(model3)
+
+odds.n.ends(model3)
+# OR = 1.0320
+# CI = 1.0141-1.0505
+# Interpretation: After adjusting for RACE and SEX, for every one score increase in ACES the odds of getting obses increases by 3.2% (95% CI 1.0141-1.0505).
+compareCoefs(model1, model3)
+```
+
+```{r}
+# Look at assumptions of multicollinearity using the vif function from the car package
+vif(model3)
+
+# another way from the jtools package
+summ(model3, vifs = TRUE)
+```
+
+```{r}
+# Lets look for influential observations using Cook's distance.
+plot(model1, which = 4, id.n = 3, col="red")
+```
+
+```{r}
+# Next we will get Cook's D calculations for each obervation and some other stats using the augment function  from the Broom package.
+model3.data <- augment(model3) %>%  
+  mutate(index = 1:n()) 
+
+head(model3.data)
+```
+
+```{r}
+# Identify and exclude observations with a Cook's Distance greater than a cutoff, use 3 x the mean Cook's D 
+cuttoff <- mean(model3.data$.cooksd)*3 # defines cutoff variable
+
+BRFSS_out <- model3.data %>% # excludes observations
+  filter(.cooksd<cuttoff)
+
+nrow(BRFSS_out)/nrow(BRFSS2) # check percent kept
+```
+
+```{r}
+# Model OBESE and ACES, RACE,SEX logistic model with observations excluded
+model4 <- glm(OBESE ~ ACES + RACE+SEX, data=BRFSS_out, family="binomial")
+summary(model4)
+odds.n.ends(model4)
+```
+
+```{r}
+# Compare coefficients between models with and without influential observations 
+compareCoefs(model3, model4) 
+```
+
+```{r}
+# Compare to original
+table(BRFSS_out$ACES, BRFSS_out$OBESE)
+table(BRFSS2$ACES, BRFSS2$OBESE)
+# TOO MUCH observations were excluded using this cutoff leading to a warning that fitted probabilities numerically 0 or 1 occurred.
+```
+
+```{r}
+# I decide to evaluate model classification performance using the dataframe without excluded observations.
+# Various pseudo R squares, log likelihood, deviance, AIC, BIC
+blr_model_fit_stats(model3)
+
+# deviance is 2 x the Log-Lik of the full model
+# the LR can be calculated as the absolute value of 2(Log-Lik Intercept only - Log-Lik Full model)
+# Compared to the intercept only model there is no difference in McFadden's R2
+
+# Hosmer lemeshow goodness of fit test: a significant p value indicates a bad fit
+blr_test_hosmer_lemeshow(model3)
+```
+
+```{r}
+# Compare the full model to the reduced model with the lrtest function.
+# likelihood ratio test: compare two nested models
+lrtest(model1, model3)
+```
+
+```{r}
+# Let's see how well our model performs for classification and prediction. Is it any good at predicting diabetes? Let's look at the sensitivity, specificity, predicted probability plots, and ROC curves/AUC with the odds.n.ends function.
+odds.n.ends(model3, rocPlot = TRUE, predProbPlot = TRUE)
+
+# Recall the definition of AUC: the probability that a randomly chosen true positive case will be ranked higher than a randomly chosen true negative case (i.e. one that doesn't have the outcome)
+# Sensitivity = 0.9979434
+# Specificity = 0.005976096
+# AUC = 0.58
+```
+
+# It is appropriate to model ACES as continuous variables because the linearity assumption was met as indicated by a p-value of >.05 for the Box Tidwell test.
+
+# For every one score increase in ACES, the odds of getting obese increases by 2.74% (95% CI 1.0097-1.0456).
+# After adjusting for race and sex, for every one score increase in ACES the odds of getting obese increases by 3.2% (95% CI 1.0141-1.0505).
+
+# Excluding observations based on Cook's Distance cutoff of 3*mean led to an unstable model indicating this cutoff is too stringent and other cutoffs should potentially be explored.
+# The sensitivity of the adjusted (including ACES, RACE, and SEX) and unadjusted models is 99.79% (adjusted) and nearly 100% (unadjusted) respectively. The specificity was 0.60% (adjusted) and nearly 0% (unadjusted) respectively. The predicted probability curve shows the probability of being a case and a non-case predicted by the model. The AUC of 0.58 in the adjusted model suggests that the model predicts the probability of being a case better than chance.
+
+
+```{r}
+# Table 1
+pacman::p_load(table1)
+```
+
+```{r}
+label(BRFSS2$ACES)<-"ACE Score"
+label(BRFSS2$SEX)<-"Sex"
+label(BRFSS2$RACE)<-"Race"
+table1(~ACES + RACE + SEX |OBESE, rowlabelhead="Variable", overall="Total", footnote='SD = standard deviation', BRFSS2)
+```
+
+```{r}
+# Figure 1
+library(DiagrammeR)
+```
+
+```{r}
+grViz("digraph flowchart {
+
+      # node definitions with substituted label text
+      node [fontname = Helvetica, shape = rectangle, fontsize=10] 
+      # notes indicate how many boxes you will have in your diagram. Since I have two sets of exclusions, I will have three nodes.
+      tab1 [label = '@@1'] # starting
+      tab2 [label = '@@2'] # exclusion 1
+      
+      # edge definitions with the node IDs are used to indicate how the rectangle boxes flow from each other. This is a simple flow chart but I could create branching instead as below
+      tab1 -> tab2
+}
+      #This set of code provides the text in each rectangle box.
+      [1]: 'Total participants from BRFSS 2021 n=186,829'
+      [2]: 'Excluding 172,602 individuals with missing data and `refuse to answer` on variables used in the analysis n=14,227'
+      ")
+
+```
+
